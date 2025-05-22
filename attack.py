@@ -1,7 +1,6 @@
 import subprocess, time
-from threading import Thread
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import urllib.parse
+from scapy.all import RadioTap, Dot11, Dot11Deauth, sendp, sniff, Dot11AssoReq
+from threading import Thread, Event
 
 # Event to stop deauth thread
 _deauth_stop = Event()
