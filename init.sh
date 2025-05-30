@@ -1,44 +1,43 @@
 #!/usr/bin/env bash
 set -e
 
-echo "🧹 Full cleanup of old Wi-Fi interfaces…"
+echo "🧹 Cleaning up old processes…"
+sudo airmon-ng check kill   # kill NetworkManager/wpa_supplicant
+sudo pkill -f hostapd       2>/dev/null || true
+sudo pkill -f dnsmasq       2>/dev/null || true
 
-# Stop NetworkManager and kill wpa_supplicant
-sudo airmon-ng check kill || true
+# — Sniffer card → monitor mode —
+MON_IF=wlxe84e06aed7ca
+echo "➜ Putting $MON_IF into MONITOR mode…"
+sudo ip link set  "$MON_IF" down
+sudo iwconfig   "$MON_IF" mode monitor
+sudo ip link set  "$MON_IF" up
 
-# Kill any hostapd/dnsmasq
-sudo pkill -f hostapd   2>/dev/null || true
-sudo pkill -f dnsmasq    2>/dev/null || true
-
-# Delete *all* monitor and AP virtual interfaces via ip link first  
-for IF in $(ip -o link show | awk -F': ' '{print $2}'); do
-  if [[ $IF =~ ^mon|^ap ]]; then
-    echo "  • Deleting $IF"
-    sudo ip link delete $IF      2>/dev/null || true
-  fi
-done
-
-# Then also delete any leftover 802.11 device entries
-for IF in $(iw dev | awk '/Interface/ {print $2}'); do
-  if [[ $IF =~ ^mon|^ap ]]; then
-    echo "  • iw dev $IF del"
-    sudo iw dev $IF del          2>/dev/null || true
-  fi
-done
-
-# Create exactly two fresh interfaces:
-
-# 1) A monitor‐mode interface "mon0"
-echo "➜ Creating monitor interface mon0"
-sudo iw dev wlxe84e06aed7ca interface add mon0 type monitor
-sudo ip link set mon0 up
-
-# 2) An AP‐mode interface "ap0"
-echo "➜ Creating AP interface ap0"
-sudo iw phy phy0 interface add ap0 type __ap
-sudo ip link set ap0 up
+# — Attempt in-place AP mode on built-in card —
+AP_PHY=phy0          # adjust if your built-in is on a different phy
+AP_DEV=wlo1
+echo "➜ Trying to put $AP_DEV into MASTER mode…"
+if sudo ip link set "$AP_DEV" down &&
+   sudo iwconfig   "$AP_DEV" mode master 2>/dev/null &&
+   sudo ip link set "$AP_DEV" up
+then
+  AP_IF="$AP_DEV"
+  echo "✔︎ $AP_DEV is now in AP mode"
+else
+  # fallback to virtual ap0 on the same PHY
+  echo "⚠️  $AP_DEV won’t go AP mode in-place; creating virtual ap0…"
+  sudo iw phy "$AP_PHY" interface add ap0 type __ap
+  AP_IF=ap0
+  sudo ip link set ap0 up
+  echo "✔︎ Virtual interface ap0 created (AP mode)"
+fi
 
 echo
-echo "✅ Done. Interfaces now:"
-iw dev mon0 info
-iw dev ap0 info
+echo "✅ Interfaces ready:"
+echo "  Sniffer: $MON_IF (monitor mode)"
+iwconfig "$MON_IF" | sed -n '1,2p'
+echo
+echo "  Evil-AP: $AP_IF"
+iwconfig "$AP_IF" | sed -n '1,2p'
+echo
+echo "Use sniffer='$MON_IF' and ap_iface='$AP_IF' in your Python tool."

