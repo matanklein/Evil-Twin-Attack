@@ -38,34 +38,34 @@ A modular toolkit to perform a Wi‑Fi “Evil Twin” attack, combining:
 
 1. **Clone the repository**  
 ```bash
-   git clone https://github.com/youruser/Evil-Twin-Attack.git
-   cd Evil-Twin-Attack
+git clone https://github.com/youruser/Evil-Twin-Attack.git
+cd Evil-Twin-Attack
 ```
 
 2. Install dependencies
 ```bash
-    sudo apt update
-    sudo apt install -y hostapd dnsmasq apache2 dnsspoof sqlite3 python3 python3‑pip
-    sudo pip3 install scapy pyrad
+sudo apt update
+sudo apt install -y hostapd dnsmasq apache2 dnsspoof sqlite3 python3 python3‑pip
+sudo pip3 install scapy pyrad
 ```
 
 3. Initialize SQLite database
 ```bash
-    python3 - <<'EOF'
-    from db_helper import init_db
-    init_db()
-    print("Database initialized at ~/evil_twin_creds.db")
-    EOF
+python3 - <<'EOF'
+from db_helper import init_db
+init_db()
+print("Database initialized at ~/evil_twin_creds.db")
+EOF
 ```
 
 4. Prepare captive‑portal files
     - Place your portal ZIP (`captive_portal.zip`) in this folder
     - Move and extract under Apache’s web root:
 ```bash
-        sudo mv captive_portal.zip /var/www/html/
-        cd /var/www/html
-        sudo unzip captive_portal.zip
-        sudo service apache2 start
+sudo mv captive_portal.zip /var/www/html/
+cd /var/www/html
+sudo unzip captive_portal.zip
+sudo service apache2 start
 ```
 
 ## 🚀 Usage
@@ -74,7 +74,7 @@ A modular toolkit to perform a Wi‑Fi “Evil Twin” attack, combining:
    
    Run the initialization script to set up your Wi-Fi cards:
 ```bash
-   sudo ./init.sh
+sudo ./init.sh
 ```
 
 - This script will:
@@ -88,12 +88,12 @@ A modular toolkit to perform a Wi‑Fi “Evil Twin” attack, combining:
 2. Start the Attack
     Launch the main attack script:
 ```bash
-    sudo python3 main.py
+sudo python3 main.py
 ```
 
 3. View Captured Credentials
 ```bash
-    sqlite3 ~/evil_twin_creds.db "SELECT * FROM credentials;"
+sqlite3 ~/evil_twin_creds.db "SELECT * FROM credentials;"
 ```
 
 ## 🧹 Cleanup
