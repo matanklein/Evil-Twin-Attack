@@ -57,7 +57,7 @@ def create_evil_ap(ap_info, ap_iface, uplink_iface="eth0", output_dir="."):
     hostapd_conf = (
         hostapd_tmpl
         .replace("[INTERFACE NAME]", ap_iface)
-        .replace("[WIFI NAME]", ssid)
+        .replace("[WiFi NAME]", ssid)
         .replace("[CHANNEL NAME]", str(channel))
     )
     print("Replaced placeholders in hostapd template.")
