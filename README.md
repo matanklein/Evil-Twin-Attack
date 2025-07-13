@@ -34,13 +34,6 @@ A modular toolkit to perform a Wi‑Fi “Evil Twin” attack, combining:
 - **Linux** with two Wi‑Fi adapters (monitor + AP modes)  
 - **Root** or sudo access  
 
-**Required packages**  
-```bash
-    sudo apt update
-    sudo apt install -y hostapd dnsmasq apache2 dnsspoof sqlite3 python3 python3-pip
-    sudo pip3 install scapy pyrad
-```
-
 ## 🔧 Setup
 
 1. **Clone the repository**  
@@ -66,7 +59,7 @@ A modular toolkit to perform a Wi‑Fi “Evil Twin” attack, combining:
 ```
 
 4. Prepare captive‑portal files
-    - Place your portal ZIP (captive_portal.zip) in this folder
+    - Place your portal ZIP (`captive_portal.zip`) in this folder
     - Move and extract under Apache’s web root:
 ```bash
         sudo mv captive_portal.zip /var/www/html/
@@ -90,7 +83,7 @@ A modular toolkit to perform a Wi‑Fi “Evil Twin” attack, combining:
 
     - Put your sniffer interface into monitor mode
 
-    - Create or configure your AP interface (e.g., ap0) in AP mode
+    - Create or configure your AP interface (e.g., `ap0`) in AP mode
 
 2. Start the Attack
     Launch the main attack script:
@@ -107,5 +100,5 @@ A modular toolkit to perform a Wi‑Fi “Evil Twin” attack, combining:
 
 Run the Cleanup Script
 ```bash
-    sudo ./cleanup.sh
+sudo ./cleanup.sh
 ```
