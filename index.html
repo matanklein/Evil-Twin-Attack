@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Wi-Fi Login</title>
+  <link rel="stylesheet" href="bootstrap.min.css" />
+  <style>
+    body {
+      background-color: #f8f9fa;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .login-box {
+      background: white;
+      padding: 2rem;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      width: 100%;
+      max-width: 400px;
+    }
+    .login-box h2 {
+      margin-bottom: 1.5rem;
+      text-align: center;
+      color: #343a40;
+    }
+    .form-control {
+      margin-bottom: 1rem;
+    }
+    .btn-primary {
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <h2>Connect to Wi‑Fi</h2>
+    <form action="login.php" method="post">
+      <input type="text" name="username" class="form-control" placeholder="Username or Email" required />
+      <input type="password" name="password" class="form-control" placeholder="Password" required />
+      <button type="submit" class="btn btn-primary">Log In</button>
+    </form>
+  </div>
+</body>
+</html>
