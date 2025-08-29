@@ -3,7 +3,7 @@ import time
 import shutil
 import threading
 from http.server import HTTPServer
-from CaptivePortal import CaptivePortalHandler
+from CaptivePortal_Simple import CaptivePortalHandler
 from pathlib import Path
 from scapy.all import RadioTap, Dot11, Dot11Deauth, sendp, sniff, Dot11AssoReq
 
