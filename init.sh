@@ -3,10 +3,29 @@ set -e
 
 echo "🧹 Cleaning up old processes…"
 
-# 0) Stop NetworkManager to prevent automatic reconnections
-echo "  • Stopping NetworkManager..."
-sudo systemctl stop NetworkManager 2>/dev/null || true
+# 0) Manage NetworkManager connections selectively to preserve internet
+echo "  • Managing NetworkManager connections..."
 sudo rfkill unblock wifi # Ensure WiFi isn't blocked
+
+# Create NetworkManager configuration to exclude ap0 from management
+echo "  • Configuring NetworkManager to ignore ap0 interface..."
+echo '[keyfile]' | sudo tee /etc/NetworkManager/conf.d/evil-twin-unmanaged.conf > /dev/null
+echo 'unmanaged-devices=interface-name:ap0' | sudo tee -a /etc/NetworkManager/conf.d/evil-twin-unmanaged.conf > /dev/null
+sudo systemctl reload NetworkManager 2>/dev/null || true
+
+# Instead of stopping NetworkManager completely, we'll:
+# 1. Preserve Ethernet connection for internet access
+# 2. Only disconnect WiFi interfaces we'll use for the attack
+echo "  • Preserving Ethernet connection for internet access..."
+echo "  • Disconnecting WiFi interfaces from NetworkManager..."
+
+# Disconnect WiFi interfaces from NetworkManager without stopping the service
+sudo nmcli device disconnect wlo1 2>/dev/null || true
+sudo nmcli device disconnect wlxe84e06aed7ca 2>/dev/null || true
+
+# Set WiFi interfaces to unmanaged to prevent auto-reconnection
+sudo nmcli device set wlo1 managed no 2>/dev/null || true  
+sudo nmcli device set wlxe84e06aed7ca managed no 2>/dev/null || true
 
 # 1) Stop/kick any system dnsmasq
 echo "  • Stopping system dnsmasq..."
@@ -82,7 +101,8 @@ sudo iw dev "$AP_DEV" interface add ap0 type managed 2>/dev/null || {
     iw dev "$AP_IF" info | head -3
     echo
     echo "Use sniffer='$MON_IF' and ap_iface='$AP_IF' in your Python tool."
-    echo "NOTE: NetworkManager is stopped to prevent automatic reconnections."
+    echo "NOTE: WiFi interfaces are unmanaged by NetworkManager during attack."
+    echo "Ethernet connection preserved for internet access."
     exit 0
   }
 }

