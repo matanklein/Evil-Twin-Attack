@@ -6,6 +6,10 @@ import json
 import subprocess
 import time
 
+'''
+This module defines a simple HTTP server handler for a captive portal.
+It serves a login page, handles form submissions, and logs credentials.
+'''
 class CaptivePortalHandler(BaseHTTPRequestHandler):
     ap_iface = None
 

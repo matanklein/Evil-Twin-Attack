@@ -7,6 +7,11 @@ from CaptivePortal import CaptivePortalHandler
 from pathlib import Path
 from scapy.all import RadioTap, Dot11, Dot11Deauth, sendp, sniff, Dot11AssoReq
 
+'''
+This module sets up an Evil Twin attack with a captive portal.
+It generates configuration files, sets up networking, launches services,
+and handles deauthentication of a victim client.
+'''
 
 _deauth_stop = threading.Event()
 

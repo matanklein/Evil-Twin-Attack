@@ -2,8 +2,12 @@
 import time
 import threading
 from collections import defaultdict, deque
-
 from scapy.all import AsyncSniffer, Dot11, Dot11Beacon, Dot11Elt, Dot11Deauth, get_if_list
+
+'''
+This module implements defense mechanisms against Evil Twin attacks and deauthentication floods.
+It continuously monitors WiFi traffic to detect suspicious activities and alerts the user.
+'''
 
 # ——— Configuration ———
 REPORT_INTERVAL   = 10    # seconds between SSID/BSSID reports
@@ -67,7 +71,7 @@ def report_loop():
                     open_bssids   = [b for b,info in bmap.items() if not info['secure']]
                     secure_bssids = [b for b,info in bmap.items() if info['secure']]
                     print(
-                        f"\n⚠️  Evil‑Twin Alert for SSID “{ssid}”:\n"
+                        f"\n  Evil‑Twin Alert for SSID “{ssid}”:\n"
                         f"    Open BSSID(s):   {', '.join(open_bssids)}\n"
                         f"    Secured BSSID(s): {', '.join(secure_bssids)}"
                     )
@@ -78,7 +82,7 @@ def report_loop():
 
             # — Check for deauth flood —
             if len(deauth_times) >= DEAUTH_THRESHOLD:
-                print(f"\n⚠️  Deauth Flood Alert: {len(deauth_times)} frames in last {DEAUTH_WINDOW}s")
+                print(f"\n  Deauth Flood Alert: {len(deauth_times)} frames in last {DEAUTH_WINDOW}s")
 
 def select_interface():
     ifaces = [i for i in get_if_list() if 'mon' in i or 'wlan' in i]

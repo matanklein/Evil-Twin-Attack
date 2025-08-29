@@ -2,6 +2,10 @@ import time, sys
 import scan, attack
 from threading import Thread
 
+'''
+This is the main script for the Evil Twin Attack Tool.
+It provides a command-line interface for selecting target networks and clients,
+and orchestrates the attack process using functions from scan.py and attack.py.'''
 
 def display_networks():
     print("\nDiscovered Networks (with client counts):")

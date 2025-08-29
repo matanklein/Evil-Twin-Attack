@@ -2,6 +2,12 @@ from scapy.all import AsyncSniffer, Dot11Beacon, Dot11Elt, Dot11, get_if_list
 from collections import defaultdict
 import threading, time, os
 
+'''
+This module handles scanning for WiFi networks and clients using Scapy.
+It provides functions to start sniffing, retrieve discovered networks and clients,
+and select network interfaces.
+'''
+
 # Shared data stores
 networks = {}  # BSSID -> {SSID, Signal, Security, Channel}
 clients = defaultdict(lambda: defaultdict(lambda: {'last_seen': None, 'pkt_count': 0}))
