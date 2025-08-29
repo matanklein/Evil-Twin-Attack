@@ -54,54 +54,103 @@ def write_configs(ap_iface, ssid, channel, output_dir="."):
     print(f" → dnsmasq.conf written ({out_dir/'dnsmasq.conf'})")
 
 def setup_network(ap_iface, uplink_iface="eth0"):
-
-    # flush the interface
+    """Configure network settings and enable IP forwarding"""
+    print("[*] Setting up network...")
+    
+    # Enable IP forwarding first
+    subprocess.run(["sh", "-c", "echo 1 > /proc/sys/net/ipv4/ip_forward"], check=True)
+    
+    # Verify IP forwarding is enabled
+    result = subprocess.run(["cat", "/proc/sys/net/ipv4/ip_forward"], 
+                           capture_output=True, text=True, check=False)
+    if result.stdout.strip() == "1":
+        print("[✓] IP forwarding enabled")
+    else:
+        print("[!] Warning: IP forwarding may not be enabled")
+    
+    # Bring interface down first
+    subprocess.run(["ip", "link", "set", ap_iface, "down"], check=False)
+    time.sleep(0.5)
+    
+    # Flush the interface
     subprocess.run(["ip", "addr", "flush", "dev", ap_iface], check=False)
-
-    # bring up ap_iface as gateway .1/24
+    
+    # Bring up ap_iface as gateway .1/24
+    subprocess.run(["ip", "link", "set", ap_iface, "up"], check=True)
     subprocess.run(
-        ["ifconfig", ap_iface, "up", "192.168.1.1", "netmask", "255.255.255.0"],
+        ["ip", "addr", "add", "192.168.1.1/24", "dev", ap_iface],
         check=True
     )
-    # enable ip_forward (needed for mangle marks)
-    subprocess.run(["sh", "-c", "echo 1 > /proc/sys/net/ipv4/ip_forward"], check=True)
+    
+    # Verify interface configuration
+    result = subprocess.run(["ip", "addr", "show", ap_iface], 
+                           capture_output=True, text=True, check=False)
+    if "192.168.1.1" in result.stdout:
+        print(f"[✓] Interface {ap_iface} configured with 192.168.1.1")
+    else:
+        print(f"[!] Warning: Interface configuration may have failed")
 
     # optional NAT out if uplink exists
     if interface_exists(uplink_iface):
+        print(f"[*] Setting up NAT using {uplink_iface}")
         subprocess.run(
             ["iptables", "-t", "nat", "-A", "POSTROUTING", "-o", uplink_iface, "-j", "MASQUERADE"],
-            check=True
-        )
-        subprocess.run(
-            ["iptables", "-A", "FORWARD", "-i", ap_iface, "-j", "ACCEPT"],
-            check=True
+            check=False
         )
     else:
         print(f"[!] Uplink '{uplink_iface}' not found—skipping NAT")
 
 def install_iptables_captive(ap_iface):
-    cmds = [
-        # recreate CAPTIVE chain
-        # always flush and delete first to avoid errors then recreate
-        ["iptables", "-t", "nat", "-F", "CAPTIVE"],
-        ["iptables", "-t", "nat", "-X", "CAPTIVE"],
+    """Setup comprehensive firewall rules for captive portal"""
+    ap_ip = "192.168.1.1"
+    print("[*] Setting up firewall rules...")
+    
+    # Clear existing rules first
+    subprocess.run(["iptables", "-t", "nat", "-F"], check=False)
+    subprocess.run(["iptables", "-F", "FORWARD"], check=False)
+    
+    rules = [
+        # Allow DNS queries (port 53)
+        ["iptables", "-A", "FORWARD", "-i", ap_iface, "-p", "udp", "--dport", "53", "-j", "ACCEPT"],
+        ["iptables", "-A", "FORWARD", "-i", ap_iface, "-p", "tcp", "--dport", "53", "-j", "ACCEPT"],
+        
+        # Allow DHCP
+        ["iptables", "-A", "FORWARD", "-i", ap_iface, "-p", "udp", "--dport", "67:68", "-j", "ACCEPT"],
+        
+        # Mark clients that have authenticated
+        # This creates a chain for authenticated clients
         ["iptables", "-t", "nat", "-N", "CAPTIVE"],
-        # skip redirect for marked clients
+        
+        # Skip redirect for marked clients (already authenticated)
         ["iptables", "-t", "nat", "-A", "PREROUTING",
          "-i", ap_iface, "-p", "tcp", "--dport", "80",
          "-m", "mark", "--mark", "1", "-j", "RETURN"],
-        # redirect everyone else to portal
-        ["iptables", "-t", "nat", "-A", "PREROUTING",
-         "-i", ap_iface, "-p", "tcp", "--dport", "80",
-         "-j", "DNAT", "--to-destination", "192.168.1.1:80"],
-        # Also redirect HTTPS traffic (will cause cert errors but trigger portal)
-        ["iptables", "-t", "nat", "-A", "PREROUTING",
-         "-i", ap_iface, "-p", "tcp", "--dport", "443",
-         "-j", "DNAT", "--to-destination", "192.168.1.1:80"],
+        
+        # Redirect HTTP traffic to captive portal
+        ["iptables", "-t", "nat", "-A", "PREROUTING", 
+         "-i", ap_iface, "-p", "tcp", "--dport", "80", 
+         "-j", "DNAT", "--to-destination", f"{ap_ip}:80"],
+        
+        # Allow traffic to captive portal
+        ["iptables", "-A", "FORWARD", "-i", ap_iface, "-p", "tcp", "--dport", "80", "-d", ap_ip, "-j", "ACCEPT"],
+        
+        # Allow established connections
+        ["iptables", "-A", "FORWARD", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"],
+        
+        # Drop all other forwarded traffic from AP (forces captive portal)
+        ["iptables", "-A", "FORWARD", "-i", ap_iface, "-j", "DROP"],
+        
+        # Set default forward policy
+        ["iptables", "-P", "FORWARD", "DROP"]
     ]
-    for cmd in cmds:
-        # never abort on iptables errors
-        subprocess.run(cmd, check=False)
+    
+    success_count = 0
+    for rule in rules:
+        result = subprocess.run(rule, check=False)
+        if result.returncode == 0:
+            success_count += 1
+    
+    print(f"[✓] Applied {success_count}/{len(rules)} firewall rules")
 
 
 def start_captive_http(ap_iface, port=80):
