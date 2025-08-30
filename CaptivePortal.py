@@ -4,9 +4,6 @@ import mimetypes
 import urllib.parse
 import json
 import subprocess
-import time
-import os
-import socket
 
 class CaptivePortalHandler(BaseHTTPRequestHandler):
     ap_iface = None
@@ -27,7 +24,6 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
                     # SSL/TLS handshake starts with specific byte sequences
                     if data[0:1] in [b'\x16', b'\x14', b'\x15', b'\x17']:
                         print(f"[SSL] Rejected SSL/TLS handshake from {self.client_address[0]}")
-                        # Close the connection immediately
                         try:
                             self.connection.close()
                         except:
@@ -101,8 +97,7 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
         if 'Android' in user_agent:
             print(f"       User-Agent: {user_agent}")
         
-        # Handle captive portal detection requests
-        # For Android devices - critical for captive portal popup
+        # Handle Android captive portal detection - critical for popup
         android_hosts = [
             "connectivitycheck.gstatic.com", 
             "connectivitycheck.android.com", 
@@ -112,44 +107,29 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
         ]
         android_paths = ["/generate_204", "/gen_204"]
         
-        if any(x in host for x in android_hosts) or any(path.startswith(x) for x in android_paths):
-            print("→ Android captive detection triggered")
-            # Android expects a 204 response when internet is available
-            # We return 302 redirect to force captive portal popup
-            if any(path.startswith(x) for x in android_paths):
-                # Return 302 redirect to trigger captive portal popup
-                self.send_response(302)
-                self.send_header('Location', 'http://192.168.1.1/')
-                self.send_header('Content-Length', '0')
-                self._add_no_cache_headers()
-                self.end_headers()
-                print("       Sent 302 redirect for /generate_204")
-            else:
-                # For other Android connectivity checks, return 302 redirect
-                self.send_response(302)
-                self.send_header('Location', 'http://192.168.1.1/')
-                self.send_header('Content-Length', '0')
-                self._add_no_cache_headers()
-                self.end_headers()
-                print("       Sent 302 redirect for connectivity check")
+        # Check for Android connectivity checks
+        if any(x in host.lower() for x in android_hosts) or any(path.startswith(x) for x in android_paths):
+            print("→ Android captive detection triggered - sending redirect")
+            self.send_response(302)
+            self.send_header('Location', 'http://192.168.1.1/')
+            self.send_header('Content-Length', '0')
+            self._add_no_cache_headers()
+            self.end_headers()
             return
             
-        # For Apple devices
-        if any(x in host for x in ["captive.apple.com", "appleiphonecell.com"]) or path == "/hotspot-detect.html":
+        # Handle Apple devices
+        if any(x in host.lower() for x in ["captive.apple.com", "appleiphonecell.com"]) or path == "/hotspot-detect.html":
             print("→ iOS/macOS captive detection triggered")
-            # Apple expects specific HTML content to trigger captive portal
             self.send_response(200)
             self.send_header('Content-Type', 'text/html')
             self._add_no_cache_headers()
             self.end_headers()
-            # Apple expects this specific response to NOT trigger captive portal
-            # We return different content to force captive portal
             apple_html = """<HTML><HEAD><TITLE>Captive Portal</TITLE></HEAD><BODY>Captive Portal</BODY></HTML>"""
             self.wfile.write(apple_html.encode())
             return
             
-        # For Windows devices
-        if any(x in host for x in ["msftconnecttest.com", "msftncsi.com"]) or path == "/ncsi.txt":
+        # Handle Windows devices
+        if any(x in host.lower() for x in ["msftconnecttest.com", "msftncsi.com"]) or path == "/ncsi.txt":
             print("→ Windows captive detection triggered")
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
@@ -157,13 +137,33 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"Microsoft Connect Test")
             return
+
+        # Simple approach: For ANY other captive portal detection request, redirect to portal
+        captive_detection_keywords = [
+            "connectivitycheck", "generate_204", "gen_204", "ncsi", "captive",
+            "hotspot-detect", "clients3.google", "msftconnecttest"
+        ]
         
-        # Handle specific files
-        if path.endswith('.html') or path.endswith('.css') or path.endswith('.js'):
+        is_captive_check = any(keyword in host.lower() for keyword in captive_detection_keywords) or \
+                          any(keyword in path.lower() for keyword in captive_detection_keywords)
+        
+        if is_captive_check:
+            print("→ Captive portal detection triggered - sending redirect")
+            # Android expects 302 redirect to trigger captive portal popup
+            self.send_response(302)
+            self.send_header('Location', 'http://192.168.0.1/')
+            self.send_header('Content-Length', '0')
+            self._add_no_cache_headers()
+            self.end_headers()
+            return
+        
+        # Handle specific files (CSS, JS, images)
+        if path.endswith(('.html', '.css', '.js', '.png', '.jpg', '.ico')):
             if self._serve_file(path):
                 return
         
         # Default: serve login page for any other request
+        print("→ Default request - serving captive portal")
         self._serve_login()
     
     def do_POST(self):

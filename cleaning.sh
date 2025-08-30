@@ -9,6 +9,12 @@ sudo pkill -f hostapd    2>/dev/null || true
 sudo pkill -f dnsmasq     2>/dev/null || true
 sudo pkill -f dnsspoof    2>/dev/null || true
 
+# 1a) Kill any Python processes using port 80
+echo "  • Killing processes on port 80..."
+sudo fuser -k 80/tcp 2>/dev/null || true
+sudo pkill -f "captive" 2>/dev/null || true
+sudo pkill -f "CaptivePortal" 2>/dev/null || true
+
 # 2) Flush iptables rules (NAT + filter + mangle)
 echo "  • Flushing iptables tables..."
 sudo iptables -t nat -F

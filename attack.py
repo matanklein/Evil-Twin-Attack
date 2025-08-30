@@ -2,8 +2,9 @@ import subprocess
 import time
 import shutil
 import threading
+import socket
 from http.server import HTTPServer
-from CaptivePortal_Simple import CaptivePortalHandler
+from CaptivePortal import CaptivePortalHandler
 from pathlib import Path
 from scapy.all import RadioTap, Dot11, Dot11Deauth, sendp, sniff, Dot11AssoReq
 
@@ -49,7 +50,7 @@ def write_configs(ap_iface, ssid, channel, output_dir="."):
     # replace the interface
     dnsmasq_conf = dnsmasq_tmpl.replace("[INTERFACE NAME]", ap_iface)
     # add DNS-hijack to force all lookups to .1
-    dnsmasq_conf += "\n# captive-portal DNS hijack\naddress=/#/192.168.1.1\n"
+    dnsmasq_conf += "\n# captive-portal DNS hijack\naddress=/#/192.168.0.1\n"
     (out_dir / "dnsmasq.conf").write_text(dnsmasq_conf)
     print(f" → dnsmasq.conf written ({out_dir/'dnsmasq.conf'})")
 
@@ -96,7 +97,7 @@ def setup_network(ap_iface, uplink_iface="eth0"):
     # Bring up ap_iface as gateway .1/24
     subprocess.run(["ip", "link", "set", ap_iface, "up"], check=True)
     subprocess.run(
-        ["ip", "addr", "add", "192.168.1.1/24", "dev", ap_iface],
+        ["ip", "addr", "add", "192.168.0.1/24", "dev", ap_iface],
         check=True
     )
     
@@ -106,18 +107,18 @@ def setup_network(ap_iface, uplink_iface="eth0"):
     # Verify interface configuration
     result = subprocess.run(["ip", "addr", "show", ap_iface], 
                            capture_output=True, text=True, check=False)
-    if "192.168.1.1" in result.stdout:
-        print(f"[✓] Interface {ap_iface} configured with 192.168.1.1")
+    if "192.168.0.1" in result.stdout:
+        print(f"[✓] Interface {ap_iface} configured with 192.168.0.1")
     else:
         print(f"[!] Warning: Interface configuration may have failed")
         print(f"    Current config: {result.stdout}")
     
     # Double-check that no unwanted DHCP IP exists
-    if "192.168.1.1" not in result.stdout or any(x in result.stdout for x in ["192.168.1.14", "192.168.1.2"]):
+    if "192.168.0.1" not in result.stdout or any(x in result.stdout for x in ["192.168.0.14", "192.168.0.2"]):
         print(f"[!] Detected potential DHCP interference, re-flushing...")
         subprocess.run(["ip", "addr", "flush", "dev", ap_iface], check=False)
         time.sleep(1)
-        subprocess.run(["ip", "addr", "add", "192.168.1.1/24", "dev", ap_iface], check=True)
+        subprocess.run(["ip", "addr", "add", "192.168.0.1/24", "dev", ap_iface], check=True)
         print(f"[*] Re-assigned static IP to {ap_iface}")
 
     # optional NAT out if uplink exists
@@ -132,7 +133,7 @@ def setup_network(ap_iface, uplink_iface="eth0"):
 
 def install_iptables_captive(ap_iface):
     """Setup comprehensive firewall rules for captive portal"""
-    ap_ip = "192.168.1.1"
+    ap_ip = "192.168.0.1"
     print("[*] Setting up firewall rules...")
     
     # Complete iptables cleanup first
@@ -216,7 +217,7 @@ def install_iptables_captive(ap_iface):
     # Verify critical NAT rule was applied
     nat_check = subprocess.run(["iptables", "-t", "nat", "-L", "PREROUTING"], 
                               capture_output=True, text=True, check=False)
-    if "192.168.1.1:80" in nat_check.stdout:
+    if "192.168.0.1:80" in nat_check.stdout:
         print("    ✓ HTTP redirection rule verified")
     else:
         print("    ✗ HTTP redirection rule NOT found - captive portal may not work")
@@ -224,13 +225,53 @@ def install_iptables_captive(ap_iface):
 
 
 def start_captive_http(ap_iface, port=80):
+    """Start captive portal HTTP server with proper socket reuse"""
+    print(f"[*] Starting captive portal on 192.168.0.1:{port}")
+    
+    # Kill any existing process on port 80
+    try:
+        import subprocess
+        subprocess.run(['sudo', 'fuser', '-k', f'{port}/tcp'], 
+                      capture_output=True, check=False)
+        time.sleep(0.5)  # Give time for port to be released
+    except:
+        pass
+    
     CaptivePortalHandler.ap_iface = ap_iface
-    # Allow socket reuse to avoid "address already in use" errors
-    server = HTTPServer(("0.0.0.0", port), CaptivePortalHandler)
-    server.allow_reuse_address = True
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    print(f"[+] Captive portal HTTP server on port {port}")
-    return server
+    
+    # Create server with socket reuse options
+    class ReusableHTTPServer(HTTPServer):
+        allow_reuse_address = True
+        allow_reuse_port = True
+        
+        def server_bind(self):
+            # Set SO_REUSEADDR before binding
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            
+            # Try to set SO_REUSEPORT if available (Linux)
+            if hasattr(socket, 'SO_REUSEPORT'):
+                try:
+                    self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                except (AttributeError, OSError):
+                    pass  # Not critical if this fails
+            
+            # Now bind
+            super().server_bind()
+    
+    try:
+        server = ReusableHTTPServer(("0.0.0.0", port), CaptivePortalHandler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        print(f"[+] Captive portal HTTP server on port {port}")
+        return server
+    except OSError as e:
+        if e.errno == 98:  # Address already in use
+            print(f"[ERROR] Failed to bind to port {port} - Address already in use")
+            print("[!] Try:")
+            print(f"    1. Run: sudo fuser -k {port}/tcp")
+            print(f"    2. Wait a moment and try again")
+            return None
+        else:
+            raise
 
 # ——— deauth code unchanged ———
 

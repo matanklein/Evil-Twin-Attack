@@ -28,7 +28,7 @@ try:
     print("You should now be able to:")
     print("1. See 'TestAP' in your WiFi networks")
     print("2. Connect to it and get redirected to captive portal")
-    print("3. Test with: curl http://192.168.1.1")
+    print("3. Test with: curl http://192.168.0.1")
     
     # Keep running
     print("\n⏳ Attack is running. Press Ctrl+C to stop...")
