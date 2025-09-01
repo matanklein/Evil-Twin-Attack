@@ -10,28 +10,6 @@ A modular toolkit to perform a Wi‑Fi “Evil Twin” attack, combining:
 
 ---
 
-## 🚀 Features
-
-### 1. **Network Discovery**  
-   - Real-time 802.11 beacon frame sniffing
-   - Automatic client detection and association tracking
-   - Interactive network and client selection interface
-
-### 2. **Evil Twin Attack Chain**  
-   - **Target Selection**: Choose specific AP and client for attack
-   - **Rogue AP Setup**: Create fake AP with identical SSID
-   - **Deauthentication**: Force victim to disconnect from legitimate AP
-   - **Captive Portal**: Intercept HTTP traffic and harvest credentials
-   - **Credential Logging**: Save captured passwords to file
-
-### 3. **Advanced Capabilities**  
-   - **Multi-device Support**: Uses two WiFi interfaces (monitor + AP mode)
-   - **Cross-platform Detection**: Handles Android, iOS, Windows captive portal detection
-   - **Network Isolation**: Preserves internet connectivity during attack
-   - **Clean Teardown**: Automated cleanup and interface restoration  
-
----
-
 # Evil Twin Attack Tool
 
 A comprehensive toolkit for performing Wi‑Fi "Evil Twin" attacks, featuring:
