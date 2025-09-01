@@ -294,7 +294,6 @@ def deauth_victim(ap_info, victim_mac, iface):
         return pkt.haslayer(Dot11AssoReq) and pkt.addr2 == victim_mac
 
     def assoc_handler(pkt):
-        print(f"→ {victim_mac} associated; stopping deauth.")
         _deauth_stop.set()
 
     sniff(iface=iface, prn=assoc_handler, stop_filter=assoc_filter)

@@ -12,8 +12,6 @@ A modular toolkit to perform a Wi‑Fi “Evil Twin” attack, combining:
 
 ## 🚀 Features
 
-## 🚀 Features
-
 ### 1. **Network Discovery**  
    - Real-time 802.11 beacon frame sniffing
    - Automatic client detection and association tracking
@@ -143,7 +141,6 @@ This script will:
 
 ## 🚀 Running the Attack
 
-### Method 1: Interactive Mode (Recommended)
 ```bash
 # Start the interactive attack tool
 sudo python3 main.py
@@ -153,38 +150,6 @@ This provides a guided interface where you can:
 1. Select target network from discovered APs
 2. Choose specific client to target  
 3. Launch coordinated Evil Twin attack
-
-### Method 2: Quick Test Mode
-```bash
-# Test captive portal functionality
-sudo python3 test_attack.py
-```
-
-This creates a test AP called "TestAP" for testing the captive portal.
-
----
-
-## 📱 Testing the Captive Portal
-
-Once the attack is running:
-
-1. **Connect a test device** to the fake AP (will appear as target SSID)
-2. **Open a web browser** - you should be redirected to captive portal
-3. **Enter credentials** on the fake login page
-4. **Check captured data**:
-   ```bash
-   # View captured credentials (if using interactive mode)
-   cat captured.txt
-   
-   # Monitor attack logs in real-time
-   tail -f /var/log/syslog | grep -E "(hostapd|dnsmasq)"
-   ```
-
-### Expected Behavior by Device Type:
-- **Android**: Automatic captive portal popup notification
-- **iOS/macOS**: "Sign in to Wi-Fi" notification  
-- **Windows**: Network authentication prompt
-- **Manual**: Navigate to any HTTP website to trigger portal
 
 ---
 
@@ -244,7 +209,6 @@ This will:
 ```
 Evil-Twin-Attack/
 ├── main.py              # Interactive attack interface
-├── test_attack.py       # Quick testing script  
 ├── attack.py            # Core attack functions
 ├── scan.py              # WiFi scanning and monitoring
 ├── init.sh              # Interface setup script

@@ -111,8 +111,8 @@ sudo ip link set ap0 up
 AP_IF=ap0
 echo "  → Virtual ap0 created"
 
-# The verification step is unnecessary as hostapd will set the mode
-# Instead, just display what we have
+
+# Display what we have
 echo
 echo "✅ Interfaces ready:"
 echo "  Sniffer: $MON_IF"
