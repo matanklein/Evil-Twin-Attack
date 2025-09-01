@@ -1,17 +1,5 @@
 # Evil Twin Attack Tool
 
-A modular toolkit to perform a Wi‑Fi “Evil Twin” attack, combining:
-
-- **Network Discovery & Sniffing** (Scapy)  
-- **Deauthentication** of a selected client  
-- **Rogue AP Creation** (hostapd + dnsmasq) matching the victim’s SSID  
-- **Captive‑Portal Phishing** (custom HTTP server)   
-- **Init/Cleanup Scripts** for interface setup & teardown  
-
----
-
-# Evil Twin Attack Tool
-
 A comprehensive toolkit for performing Wi‑Fi "Evil Twin" attacks, featuring:
 
 - **📡 Network Discovery & Sniffing** (Scapy-based packet capture)  
@@ -129,6 +117,9 @@ This provides a guided interface where you can:
 2. Choose specific client to target  
 3. Launch coordinated Evil Twin attack
 
+---
+## Video Demonstration
+The Demonstration of the attack can be found (here)[https://drive.google.com/drive/folders/19Av7hEIliQp1bWWrfnaglL6olDhv4t8u?usp=sharing]
 ---
 
 ## 🔍 Troubleshooting
