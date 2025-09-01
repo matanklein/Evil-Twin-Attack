@@ -1,6 +1,5 @@
 import time, sys
 import scan, attack
-from threading import Thread
 
 '''
 This is the main script for the Evil Twin Attack Tool.
